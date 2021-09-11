@@ -1,0 +1,3 @@
+TOKEN = ""
+CHANNEL_ID = 0
+ADMIN_ID = 0
