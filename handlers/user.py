@@ -1,3 +1,4 @@
+import aiogram.utils.exceptions
 from aiogram import types
 
 from loader import bot, dp
@@ -14,14 +15,16 @@ from typing import Union
 async def start(message: types.Message):
     try:
         crud.create_user(telegram_id=message.from_user.id)
-        await switch_to_main_menu(message)
+        await states.User.MAIN_MENU.set()
+        await message.answer(text=messages.MAIN_MENU, reply_markup=keyboards.remove_kb)
     except IntegrityError:
-        await switch_to_main_menu(message)
+        await states.User.MAIN_MENU.set()
+        await message.answer(text=messages.MAIN_MENU, reply_markup=keyboards.remove_kb)
     except Exception as error:
         await utils.error_except(message.from_user.id, error)
 
 
-@dp.message_handler(state=states.User.REPLY_TO_MESSAGE)
+@dp.message_handler(state=states.User.REPLY_TO_MESSAGE, content_types=[types.ContentType.ANY])
 async def reply_to_message(message: types.Message):
     """
     Пользователь отвечает на сообщение
@@ -35,55 +38,47 @@ async def reply_to_message(message: types.Message):
     await send_message_to_channel(message=message, reply_to_message_id=reply_to_message_id)
 
 
-@dp.message_handler(
-    state="*",
-    content_types=[
-        types.ContentType.VIDEO, types.ContentType.TEXT, types.ContentType.AUDIO,
-        types.ContentType.STICKER, types.ContentType.VOICE, types.ContentType.PHOTO])
+@dp.message_handler(state="*", content_types=[types.ContentType.ANY])
 async def all_messages(message: types.Message):
     # Проверяем, пересылаемое ли сообщение
-    if message.forward_from or message.forward_from_chat:
-        if message.forward_from_chat:
-            # Если пересылают из анонимки, то это реплай на одно из сообщений
-            if message.forward_from_chat.id == config.CHANNEL_ID:
-                await switch_to_sending_reply(message)
-                return
-
-        # Если сообщение было переслано не из анонимки, то это не реплай.
-        # Пересылаем сообщение в анонимку
-        await bot.forward_message(
-            chat_id=config.CHANNEL_ID, from_chat_id=message.from_user.id,
-            message_id=message.message_id)
-
-        await bot.send_message(chat_id=message.from_user.id, text=messages.FORWARDED_SUCCESSFUL)
-
-    else:
+    if not (message.forward_from or message.forward_from_chat):
         await send_message_to_channel(message=message)
+        return
+
+    if message.forward_from_chat:
+        # Если пересылают из анонимки, то это реплай на одно из сообщений
+        if message.forward_from_chat.id == config.CHANNEL_ID:
+            await switch_to_sending_reply(message)
+            return
+
+    # Если сообщение было переслано не из анонимки, то это не реплай.
+    # Пересылаем сообщение в анонимку
+    await bot.forward_message(
+        chat_id=config.CHANNEL_ID, from_chat_id=message.from_user.id,
+        message_id=message.message_id)
+
+    await bot.send_message(chat_id=message.from_user.id, text=messages.FORWARDED_SUCCESSFUL)
 
 
 @dp.callback_query_handler(text_contains="cancel_reply", state=states.User.REPLY_TO_MESSAGE)
 async def cancel_reply(query: types.CallbackQuery):
-    await bot.edit_message_reply_markup(
-        reply_markup=None, chat_id=query.from_user.id,
-        message_id=query.message.message_id)
+    try:
+        await bot.edit_message_reply_markup(
+            reply_markup=None, chat_id=query.from_user.id,
+            message_id=query.message.message_id)
+    except aiogram.utils.exceptions.MessageCantBeEdited:
+        pass
 
-    await switch_to_main_menu(message=query.message)
-
-
-async def switch_to_main_menu(message: types.Message):
-    """
-    Переводит пользователя в главное меню
-
-    :param message: Объект сообщения Telegram
-    """
-
-    await message.answer(text=messages.MAIN_MENU, reply_markup=keyboards.remove_kb)
     await states.User.MAIN_MENU.set()
+    await bot.send_message(chat_id=query.from_user.id, text=messages.MAIN_MENU, reply_markup=keyboards.remove_kb)
 
 
 async def switch_to_sending_reply(message: types.Message):
     await states.User.REPLY_TO_MESSAGE.set()
-    crud.edit_reply_message_id(telegram_id=message.from_user.id, message_id_to_reply=message.forward_from_message_id)
+    crud.edit_reply_message_id(
+        telegram_id=message.from_user.id,
+        message_id_to_reply=message.forward_from_message_id)
+
     await message.answer(text=messages.SEND_REPLY, reply_markup=keyboards.cancel_reply)
 
 
@@ -125,5 +120,17 @@ async def send_message_to_channel(message: types.Message, reply_to_message_id: U
             chat_id=config.CHANNEL_ID, voice=message.voice.file_id,
             reply_to_message_id=reply_to_message_id)
 
+    elif message.content_type == "poll":
+        await bot.send_poll(
+            chat_id=config.CHANNEL_ID, question=message.poll.question,
+            options=[option.text for option in message.poll.options], is_anonymous=True,
+            allows_multiple_answers=message.poll.allows_multiple_answers
+        )
+
+    elif message.content_type == "animation":
+        await bot.send_animation(
+            chat_id=config.CHANNEL_ID, animation=message.animation.file_id
+        )
+
     await message.answer(text=messages.POST_SENT, reply_markup=keyboards.remove_kb)
-    await switch_to_main_menu(message=message)
+    await states.User.MAIN_MENU.set()
