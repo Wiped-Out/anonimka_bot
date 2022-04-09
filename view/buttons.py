@@ -1,2 +1,2 @@
 back_to_main_menu = "⬅️ В главное меню"
-cancel_reply = "❌ Отменить реплай"
+cancel_reply = "❌ Отменить"

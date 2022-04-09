@@ -1,6 +1,0 @@
-from loader import log
-
-
-async def error_except(user_id: int, error: Exception):
-    log.info(f"Ошибка у пользователя {user_id}")
-    log.exception(error)
