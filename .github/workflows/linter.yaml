@@ -1,0 +1,37 @@
+name: Linter
+
+on:
+  push:
+    branches: [ main, add_linter ]
+  pull_request:
+    branches: [ main, add_linter ]
+
+jobs:
+  linter:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ 3.9 ]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip3 install wemake-python-styleguide
+          pip3 install -r ./bot_compose/bot/requirements.txt
+      - name: Flake8
+        run: flake8 .
+
+      - name: Archive html linter results
+        uses: actions/upload-artifact@v3
+        if: ${{ always() }}
+        with:
+          name: linter-result
+          path: flake-report
